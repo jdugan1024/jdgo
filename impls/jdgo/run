@@ -1,2 +1,2 @@
 #!/bin/bash
-go run $(dirname $0)/${STEP:-stepA_mal}_src/main.go "${@}"
+go run $(dirname $0)/${STEP:-stepA_mal}_src/*.go "${@}"
