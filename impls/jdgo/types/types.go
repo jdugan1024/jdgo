@@ -11,7 +11,37 @@ type MalType interface {
 	TypeName() string
 	Print() string
 }
-type Env = map[string]MalType
+type Env struct {
+	outer *Env
+	items map[string]MalType
+}
+
+func NewEnv(outer *Env) *Env {
+	return &Env{outer, map[string]MalType{}}
+}
+
+func (env *Env) Set(k *Symbol, v MalType) {
+	env.items[k.value] = v
+}
+
+func (env *Env) Find(k *Symbol) (MalType, error) {
+	workingEnv := env
+	for {
+		v, ok := workingEnv.items[k.value]
+		if ok {
+			return v, nil
+		}
+		workingEnv = workingEnv.outer
+		if workingEnv == nil {
+			break
+		}
+	}
+	return nil, fmt.Errorf("'%s' not found", k.value)
+}
+
+func (env *Env) Get(k *Symbol) (MalType, error) {
+	return env.Find(k)
+}
 
 type List struct {
 	items []MalType
@@ -37,7 +67,7 @@ func (list *List) Print() string {
 func (list *List) Append(form MalType) {
 	list.items = append(list.items, form)
 }
-func (list *List) Map(f func(arg MalType, env Env) (MalType, error), env Env) (MalType, error) {
+func (list *List) Map(f func(arg MalType, env *Env) (MalType, error), env *Env) (MalType, error) {
 	r := []MalType{}
 
 	for _, v := range list.items {
@@ -63,6 +93,21 @@ func (list *List) Rest() ([]MalType, error) {
 	}
 	return list.items[1:], nil
 }
+func (list *List) BindEnv(env *Env, eval func(MalType, *Env) (MalType, error)) error {
+	for i := 0; i < len(list.items); i += 2 {
+		keyObj := list.items[i]
+		key, ok := keyObj.(*Symbol)
+		if !ok {
+			return fmt.Errorf("attempting to bind to a non symbol: %s", keyObj.Print())
+		}
+		val, err := eval(list.items[i+1], env)
+		if err != nil {
+			return err
+		}
+		env.Set(key, val)
+	}
+	return nil
+}
 
 type Vector struct {
 	items []MalType
@@ -85,7 +130,7 @@ func (vec *Vector) Append(form MalType) {
 	vec.items = append(vec.items, form)
 }
 
-func (vec *Vector) Map(f func(arg MalType, env Env) (MalType, error), env Env) (MalType, error) {
+func (vec *Vector) Map(f func(arg MalType, env *Env) (MalType, error), env *Env) (MalType, error) {
 	r := []MalType{}
 
 	for _, v := range vec.items {
@@ -110,6 +155,21 @@ func (vec *Vector) Rest() ([]MalType, error) {
 		return nil, errors.New("can't take first of empty list")
 	}
 	return vec.items[1:], nil
+}
+func (vec *Vector) BindEnv(env *Env, eval func(MalType, *Env) (MalType, error)) error {
+	for i := 0; i < len(vec.items); i += 2 {
+		keyObj := vec.items[i]
+		key, ok := keyObj.(*Symbol)
+		if !ok {
+			return fmt.Errorf("attempting to bind to a non symbol: %s", keyObj.Print())
+		}
+		val, err := eval(vec.items[i+1], env)
+		if err != nil {
+			return err
+		}
+		env.Set(key, val)
+	}
+	return nil
 }
 
 type HashMap struct {
@@ -145,7 +205,7 @@ func (hm *HashMap) Print() string {
 func (hm *HashMap) Set(key String, form MalType) {
 	hm.items[key] = form
 }
-func (hm *HashMap) Map(f func(arg MalType, env Env) (MalType, error), env Env) (MalType, error) {
+func (hm *HashMap) Map(f func(arg MalType, env *Env) (MalType, error), env *Env) (MalType, error) {
 	r := map[String]MalType{}
 
 	for k, v := range hm.items {
@@ -154,7 +214,6 @@ func (hm *HashMap) Map(f func(arg MalType, env Env) (MalType, error), env Env) (
 			return nil, err
 		}
 		r[k] = item
-		fmt.Printf(">>> %s => %s\n", v.Print(), item.Print())
 	}
 
 	return &HashMap{r}, nil
